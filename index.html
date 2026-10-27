@@ -53,11 +53,11 @@ li input[type=checkbox]{width:19px;height:19px;flex-shrink:0}
 <div class="panel" id="p-cal"><div class="soon"><b>Kalendarz — wkrótce</b>Rocznice i ważne daty z przypomnieniem.</div></div>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js"></script>
 <script>
-// --- WKLEJ TU SWOJE DANE Z SUPABASE (Project Settings -> API) ---
-const SUPABASE_URL = "https://TWOJ-PROJEKT.supabase.co";
-const SUPABASE_ANON_KEY = "TWOJ-KLUCZ-ANON";
+// --- WKLEJ TU SWOJE DANE Z SUPABASE (Settings -> API Keys) ---
+const SUPABASE_URL = "https://TWOJ-PROJEKT.supabase.co";           // "Project URL" (zakładka General albo Infrastructure)
+const SUPABASE_ANON_KEY = "TWOJ-KLUCZ-PUBLISHABLE";                 // klucz "Publishable key" (sb_publishable_...) — NIE "Secret key"
 // ------------------------------------------------------------------
 
 const $=id=>document.getElementById(id);
