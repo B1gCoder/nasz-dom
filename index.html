@@ -34,6 +34,12 @@ li input[type=checkbox]{width:19px;height:19px;flex-shrink:0}
 .soon{background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:30px 16px;text-align:center;color:var(--mut)}
 .soon b{display:block;color:var(--fg);font-size:17px;margin-bottom:4px}
 #err{color:#dc2626;text-align:center;padding:14px;display:none}
+.when{font-size:12px;color:var(--mut)}
+input[type=date]{font:inherit;padding:10px 12px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.recur{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--mut);white-space:nowrap}
+.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--acc);color:#fff;white-space:nowrap}
+.badge.today{background:#dc2626}
+li.soonrow{background:color-mix(in srgb, var(--acc) 10%, var(--card))}
 </style></head>
 <body><main>
 <h1>🏡 Nasz dom</h1>
@@ -50,14 +56,23 @@ li input[type=checkbox]{width:19px;height:19px;flex-shrink:0}
  <div class="foot"><span id="shopCount"></span><button id="shopClear">Wyczyść odhaczone</button></div>
 </div>
 <div class="panel" id="p-watch"><div class="soon"><b>Do obejrzenia — wkrótce</b>Następny krok: serial, film, książka.</div></div>
-<div class="panel" id="p-cal"><div class="soon"><b>Kalendarz — wkrótce</b>Rocznice i ważne daty z przypomnieniem.</div></div>
+<div class="panel" id="p-cal">
+ <div class="row"><input id="calLabel" type="text" placeholder="np. Urodziny Zosi" maxlength="60"></div>
+ <div class="row">
+  <input id="calDate" type="date">
+  <label class="recur"><input id="calRecurring" type="checkbox" checked> co roku</label>
+  <button class="add" id="calAdd">Dodaj</button>
+ </div>
+ <ul id="calList"></ul>
+ <div class="empty" id="calEmpty" style="display:none">Brak zapisanych dat — dodaj coś powyżej.</div>
+</div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js"></script>
 <script>
 // --- WKLEJ TU SWOJE DANE Z SUPABASE (Settings -> API Keys) ---
-const SUPABASE_URL = "https://eiyuqczdtmuhjkqqqvva.supabase.co";           // "Project URL" (zakładka General albo Infrastructure)
-const SUPABASE_ANON_KEY = "sb_publishable_dG2dAFFXU9Z_sEy56JDX2w_9aeV1GXE";                 // klucz "Publishable key" (sb_publishable_...) — NIE "Secret key"
+const SUPABASE_URL = "https://eiyuqczdtmuhjkqqqvva.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_dG2dAFFXU9Z_sEy56JDX2w_9aeV1GXE";
 // ------------------------------------------------------------------
 
 const $=id=>document.getElementById(id);
@@ -136,6 +151,78 @@ if(SUPABASE_URL.includes("TWOJ-PROJEKT")){
     const {error}=await sb.from("shopping_items").delete().in("id",done.map(d=>d.id));
     if(error)alert("Nie udało się usunąć: "+error.message);
     load();
+  };
+
+  // --- Kalendarz ---
+  let calItems=[];
+
+  function daysUntil(d){
+    const today=new Date();today.setHours(0,0,0,0);
+    const target=new Date(d.event_date+"T00:00:00");
+    if(d.recurring){
+      target.setFullYear(today.getFullYear());
+      if(target<today)target.setFullYear(today.getFullYear()+1);
+    }
+    return Math.round((target-today)/86400000);
+  }
+  function fmtWhen(n){
+    if(n===0)return"Dziś!";
+    if(n===1)return"Jutro";
+    if(n>0)return"za "+n+" dni";
+    return"było "+Math.abs(n)+" dni temu";
+  }
+
+  function renderCal(){
+    const list=$("calList");list.replaceChildren();
+    $("calEmpty").style.display=calItems.length?"none":"block";
+    const withDays=calItems.map(d=>({...d,_days:daysUntil(d)}))
+      .sort((a,b)=>{
+        if(a._days<0&&b._days>=0)return 1;
+        if(b._days<0&&a._days>=0)return-1;
+        return a._days-b._days;
+      });
+    for(const d of withDays){
+      const li=document.createElement("li");
+      if(d._days>=0&&d._days<=7)li.classList.add("soonrow");
+      const txt=document.createElement("div");txt.className="txt";
+      const nm=document.createElement("div");nm.className="name";nm.textContent=d.label;
+      const when=document.createElement("div");when.className="when";
+      when.textContent=new Date(d.event_date+"T00:00:00").toLocaleDateString("pl-PL",{day:"numeric",month:"long"})+(d.recurring?" (co roku)":"");
+      txt.append(nm,when);
+      const badge=document.createElement("span");
+      if(d._days===0){badge.className="badge today";badge.textContent="Dziś!"}
+      else if(d._days>0&&d._days<=7){badge.className="badge";badge.textContent=fmtWhen(d._days)}
+      else{badge.className="when";badge.textContent=fmtWhen(d._days)}
+      const del=document.createElement("button");del.className="del";del.textContent="✕";
+      del.onclick=async()=>{
+        const {error}=await sb.from("important_dates").delete().eq("id",d.id);
+        if(error)alert("Nie udało się usunąć: "+error.message);
+        loadCal();
+      };
+      li.append(txt,badge,del);list.append(li);
+    }
+  }
+
+  async function loadCal(){
+    const {data,error}=await sb.from("important_dates").select("*");
+    if(error){alert("Błąd kalendarza: "+error.message);return}
+    calItems=data;renderCal();
+  }
+
+  sb.channel("important_dates_changes")
+    .on("postgres_changes",{event:"*",schema:"public",table:"important_dates"},loadCal)
+    .subscribe();
+  loadCal();
+
+  $("calAdd").onclick=async()=>{
+    const label=$("calLabel").value.trim();
+    const date=$("calDate").value;
+    if(!label||!date){alert("Podaj nazwę i datę.");return}
+    const recurring=$("calRecurring").checked;
+    const {error}=await sb.from("important_dates").insert({label,event_date:date,recurring,added_by:myName()});
+    if(error)alert("Nie udało się dodać: "+error.message);
+    $("calLabel").value="";$("calDate").value="";
+    loadCal();
   };
 }
 </script>
