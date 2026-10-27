@@ -56,8 +56,8 @@ li input[type=checkbox]{width:19px;height:19px;flex-shrink:0}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 // --- WKLEJ TU SWOJE DANE Z SUPABASE (Project Settings -> API) ---
-const SUPABASE_URL = "https://eiyuqczdtmuhjkqqqvva.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVpeXVxY3pkdG11aGprcXFxdnZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5NDU1NjgsImV4cCI6MjEwODUyMTU2OH0.FIFyKapuDWtVXi-kW69UV4YWv-kv2SdhC5NskF6sjyg";
+const SUPABASE_URL = "https://TWOJ-PROJEKT.supabase.co";
+const SUPABASE_ANON_KEY = "TWOJ-KLUCZ-ANON";
 // ------------------------------------------------------------------
 
 const $=id=>document.getElementById(id);
@@ -88,14 +88,21 @@ if(SUPABASE_URL.includes("TWOJ-PROJEKT")){
       const li=document.createElement("li");
       if(d.done)li.classList.add("done");
       const cb=document.createElement("input");cb.type="checkbox";cb.checked=!!d.done;
-      cb.onchange=()=>sb.from("shopping_items").update({done:cb.checked}).eq("id",d.id)
-        .then(({error})=>{if(error)cb.checked=!cb.checked});
+      cb.onchange=async()=>{
+        const {error}=await sb.from("shopping_items").update({done:cb.checked}).eq("id",d.id);
+        if(error){cb.checked=!cb.checked;alert("Nie udało się zapisać: "+error.message)}
+        load();
+      };
       const txt=document.createElement("div");txt.className="txt";
       const nm=document.createElement("div");nm.className="name";nm.textContent=d.name||"";
       txt.append(nm);
       if(d.added_by){const by=document.createElement("div");by.className="by";by.textContent="dodał(a): "+d.added_by;txt.append(by)}
       const del=document.createElement("button");del.className="del";del.textContent="✕";
-      del.onclick=()=>sb.from("shopping_items").delete().eq("id",d.id);
+      del.onclick=async()=>{
+        const {error}=await sb.from("shopping_items").delete().eq("id",d.id);
+        if(error)alert("Nie udało się usunąć: "+error.message);
+        load();
+      };
       li.append(cb,txt,del);list.append(li);
     }
   }
@@ -103,6 +110,7 @@ if(SUPABASE_URL.includes("TWOJ-PROJEKT")){
   async function load(){
     const {data,error}=await sb.from("shopping_items").select("*").order("created_at",{ascending:true});
     if(error){$("err").style.display="block";$("err").textContent="Błąd połączenia z bazą: "+error.message;return}
+    $("err").style.display="none";
     items=data;render();
   }
 
@@ -117,6 +125,7 @@ if(SUPABASE_URL.includes("TWOJ-PROJEKT")){
     $("shopInput").value="";
     const {error}=await sb.from("shopping_items").insert({name:v,done:false,added_by:myName()});
     if(error)alert("Nie udało się dodać: "+error.message);
+    load();
   }
   $("shopAdd").onclick=addItem;
   $("shopInput").addEventListener("keydown",e=>{if(e.key==="Enter")addItem()});
@@ -124,7 +133,9 @@ if(SUPABASE_URL.includes("TWOJ-PROJEKT")){
     const done=items.filter(i=>i.done);
     if(!done.length)return;
     if(!confirm("Usunąć "+done.length+" odhaczonych pozycji?"))return;
-    await sb.from("shopping_items").delete().in("id",done.map(d=>d.id));
+    const {error}=await sb.from("shopping_items").delete().in("id",done.map(d=>d.id));
+    if(error)alert("Nie udało się usunąć: "+error.message);
+    load();
   };
 }
 </script>
