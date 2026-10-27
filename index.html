@@ -40,6 +40,23 @@ input[type=date]{font:inherit;padding:10px 12px;border-radius:9px;border:1px sol
 .badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--acc);color:#fff;white-space:nowrap}
 .badge.today{background:#dc2626}
 li.soonrow{background:color-mix(in srgb, var(--acc) 10%, var(--card))}
+.sug{position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--line);border-radius:9px;margin-top:4px;max-height:280px;overflow-y:auto;z-index:5;display:none;box-shadow:0 8px 20px rgba(0,0,0,.15)}
+.sug.show{display:block}
+.sug-item{display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer}
+.sug-item:hover{background:var(--bg)}
+.sug-item img{width:32px;height:48px;object-fit:cover;border-radius:4px;background:var(--line);flex-shrink:0}
+.sug-item .y{color:var(--mut);font-size:12px}
+.wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:12px}
+.wcard{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.wcard img{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:var(--line)}
+.wcard .ph{width:100%;aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;background:var(--line);color:var(--mut);font-size:30px}
+.wcard .wt{padding:6px 8px 0;font-size:13px;word-break:break-word}
+.wcard .wy{padding:0 8px 6px;font-size:11px;color:var(--mut)}
+.wcard.done{opacity:.55}
+.wcard.done .wt{text-decoration:line-through}
+.wbtns{display:flex;justify-content:space-between;gap:4px;padding:0 6px 6px}
+.wbtns button{font:inherit;font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+.wbtns button.del{color:#dc2626}
 </style></head>
 <body><main>
 <h1>🏡 Nasz dom</h1>
@@ -55,7 +72,14 @@ li.soonrow{background:color-mix(in srgb, var(--acc) 10%, var(--card))}
  <div class="empty" id="shopEmpty" style="display:none">Lista jest pusta — dodaj coś powyżej.</div>
  <div class="foot"><span id="shopCount"></span><button id="shopClear">Wyczyść odhaczone</button></div>
 </div>
-<div class="panel" id="p-watch"><div class="soon"><b>Do obejrzenia — wkrótce</b>Następny krok: serial, film, książka.</div></div>
+<div class="panel" id="p-watch">
+ <div class="row" style="position:relative">
+  <input id="watchInput" type="text" placeholder="Wpisz tytuł filmu lub serialu…" maxlength="100" autocomplete="off">
+  <div class="sug" id="watchSug"></div>
+ </div>
+ <div class="wgrid" id="watchGrid"></div>
+ <div class="empty" id="watchEmpty" style="display:none">Lista jest pusta — zacznij wpisywać tytuł powyżej.</div>
+</div>
 <div class="panel" id="p-cal">
  <div class="row"><input id="calLabel" type="text" placeholder="np. Urodziny Zosi" maxlength="60"></div>
  <div class="row">
@@ -73,6 +97,7 @@ li.soonrow{background:color-mix(in srgb, var(--acc) 10%, var(--card))}
 // --- WKLEJ TU SWOJE DANE Z SUPABASE (Settings -> API Keys) ---
 const SUPABASE_URL = "https://eiyuqczdtmuhjkqqqvva.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_dG2dAFFXU9Z_sEy56JDX2w_9aeV1GXE";
+const TMDB_API_KEY = "8ffd14e25be9f06ce89a5ce352294c40";
 // ------------------------------------------------------------------
 
 const $=id=>document.getElementById(id);
@@ -224,6 +249,110 @@ if(SUPABASE_URL.includes("TWOJ-PROJEKT")){
     $("calLabel").value="";$("calDate").value="";
     loadCal();
   };
+
+  // --- Do obejrzenia ---
+  let watchItems=[];
+  let watchTimer=null;
+  const tmdbReady=TMDB_API_KEY&&!TMDB_API_KEY.includes("TWOJ-KLUCZ");
+
+  async function tmdbSearch(q){
+    const url="https://api.themoviedb.org/3/search/multi?api_key="+encodeURIComponent(TMDB_API_KEY)+"&query="+encodeURIComponent(q)+"&language=pl-PL&include_adult=false";
+    try{
+      const r=await fetch(url);
+      if(!r.ok)return[];
+      const j=await r.json();
+      return(j.results||[]).filter(x=>x.media_type==="movie"||x.media_type==="tv").slice(0,6);
+    }catch(e){return[]}
+  }
+
+  function sugRow(item){
+    const row=document.createElement("div");row.className="sug-item";
+    const img=document.createElement("img");
+    if(item.poster_path){img.src="https://image.tmdb.org/t/p/w92"+item.poster_path}else{img.style.visibility="hidden"}
+    const box=document.createElement("div");
+    const t=document.createElement("div");t.textContent=item.title||item.name||"";
+    const date=(item.release_date||item.first_air_date||"").slice(0,4);
+    const y=document.createElement("div");y.className="y";y.textContent=(item.media_type==="tv"?"serial":"film")+(date?" · "+date:"");
+    box.append(t,y);row.append(img,box);
+    row.onclick=()=>addWatch(item);
+    return row;
+  }
+
+  $("watchInput").addEventListener("input",()=>{
+    clearTimeout(watchTimer);
+    const q=$("watchInput").value.trim();
+    const sug=$("watchSug");
+    if(!tmdbReady||!q){sug.classList.remove("show");sug.replaceChildren();return}
+    watchTimer=setTimeout(async()=>{
+      const res=await tmdbSearch(q);
+      sug.replaceChildren();
+      if(!res.length){sug.classList.remove("show");return}
+      res.forEach(it=>sug.append(sugRow(it)));
+      sug.classList.add("show");
+    },400);
+  });
+  $("watchInput").addEventListener("keydown",e=>{
+    if(e.key==="Enter"){
+      e.preventDefault();
+      const v=$("watchInput").value.trim();
+      if(v)addWatch({title:v});
+    }
+  });
+  document.addEventListener("click",e=>{
+    if(!$("p-watch").contains(e.target))$("watchSug").classList.remove("show");
+  });
+
+  async function addWatch(item){
+    const title=item.title||item.name||"";
+    if(!title)return;
+    $("watchInput").value="";
+    $("watchSug").classList.remove("show");$("watchSug").replaceChildren();
+    const date=(item.release_date||item.first_air_date||"").slice(0,4);
+    const{error}=await sb.from("watchlist").insert({
+      title,media_type:item.media_type||null,year:date||null,
+      poster_path:item.poster_path||null,tmdb_id:item.id||null,
+      done:false,added_by:myName()
+    });
+    if(error)alert("Nie udało się dodać: "+error.message);
+    loadWatch();
+  }
+
+  function renderWatch(){
+    const grid=$("watchGrid");grid.replaceChildren();
+    $("watchEmpty").style.display=watchItems.length?"none":"block";
+    const sorted=[...watchItems].sort((a,b)=>(a.done===b.done)?0:(a.done?1:-1));
+    for(const d of sorted){
+      const card=document.createElement("div");card.className="wcard"+(d.done?" done":"");
+      if(d.poster_path){
+        const img=document.createElement("img");img.src="https://image.tmdb.org/t/p/w342"+d.poster_path;img.alt=d.title;
+        card.append(img);
+      }else{
+        const ph=document.createElement("div");ph.className="ph";ph.textContent="🎬";
+        card.append(ph);
+      }
+      const t=document.createElement("div");t.className="wt";t.textContent=d.title;
+      const y=document.createElement("div");y.className="wy";
+      y.textContent=[d.media_type==="tv"?"serial":d.media_type==="movie"?"film":"",d.year].filter(Boolean).join(" · ");
+      const btns=document.createElement("div");btns.className="wbtns";
+      const toggle=document.createElement("button");toggle.textContent=d.done?"Cofnij":"Obejrzane";
+      toggle.onclick=async()=>{const{error}=await sb.from("watchlist").update({done:!d.done}).eq("id",d.id);if(error)alert("Błąd: "+error.message);loadWatch()};
+      const del=document.createElement("button");del.className="del";del.textContent="✕";
+      del.onclick=async()=>{const{error}=await sb.from("watchlist").delete().eq("id",d.id);if(error)alert("Nie udało się usunąć: "+error.message);loadWatch()};
+      btns.append(toggle,del);
+      card.append(t,y,btns);grid.append(card);
+    }
+  }
+
+  async function loadWatch(){
+    const{data,error}=await sb.from("watchlist").select("*").order("created_at",{ascending:false});
+    if(error){alert("Błąd listy do obejrzenia: "+error.message);return}
+    watchItems=data;renderWatch();
+  }
+
+  sb.channel("watchlist_changes")
+    .on("postgres_changes",{event:"*",schema:"public",table:"watchlist"},loadWatch)
+    .subscribe();
+  loadWatch();
 }
 </script>
 </body></html>
